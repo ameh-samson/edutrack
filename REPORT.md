@@ -84,7 +84,7 @@ Output design in an authentication system carries direct security implications. 
 
 ### 3.4.2 Login Page Output
 
-The login page (`index.html`) presents a clean, centred card layout. On validation failure, an inline alert banner displays the generic error message below the form heading. On success, the server responds with a JSON redirect instruction and the JavaScript client navigates to the dashboard. The Remember Me checkbox, when checked, extends the session duration from 30 minutes to 30 days by setting `req.session.cookie.maxAge` on the server, with no change to the visible interface.
+The login page (`index.html`) presents a clean, centred card layout. On validation failure, an inline alert banner displays the generic error message below the form heading. On success, the server responds with a JSON redirect instruction and the JavaScript client navigates to the dashboard. The Remember Me checkbox, when checked, extends the session duration from 30 minutes to 24 hours by setting `req.session.cookie.maxAge` on the server, with no change to the visible interface.
 
 ### 3.4.3 Dashboard Output — Protected Page
 
@@ -168,7 +168,7 @@ The login form (`index.html`) collects only two inputs — Email Address and Pas
 4. The `loginLimiter` rate limiter (maximum 5 requests per 15 minutes per IP) is evaluated. Excess requests receive `429 Too Many Requests`.
 5. The server queries MongoDB for a user document matching the supplied email. If no document is found, a pre-generated `DUMMY_HASH` — produced at server startup by `bcrypt.hashSync()` — is substituted, ensuring the bcrypt comparison still runs and response time is identical to a valid-user lookup. This prevents timing-based email enumeration.
 6. `bcrypt.compare(password, hashToCompare)` runs. If the result is false (either unrecognised email or wrong password), the same generic `401` response is returned.
-7. On a successful comparison, `req.session.cookie.maxAge` is set to 30 days if `rememberMe` is `true`, or 30 minutes otherwise. `req.session.userId` is set to the user's MongoDB ObjectId. The user's `lastLogin` field is updated in the database.
+7. On a successful comparison, `req.session.cookie.maxAge` is set to 24 hours if `rememberMe` is `true`, or 30 minutes otherwise. `req.session.userId` is set to the user's MongoDB ObjectId. The user's `lastLogin` field is updated in the database.
 8. The server returns `{ success: true, redirect: "/dashboard.html" }`. The client navigates to the dashboard.
 
 ---
@@ -203,12 +203,18 @@ The `email` and `matricNumber` fields carry unique indexes enforced at both the 
 
 Server-side session state is managed by the `express-session` middleware. Each session record associates an opaque, cryptographically random session identifier with the authenticated student's `userId`. The session identifier is transmitted to the browser as an httpOnly cookie with the following security attributes:
 
-| Attribute  | Value                                         | Purpose                                                                                   |
-| ---------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `httpOnly` | `true`                                        | Prevents client-side JavaScript from reading the cookie, blocking XSS-based session theft |
-| `secure`   | Configurable via `COOKIE_SECURE` env          | Restricts transmission to HTTPS connections in production                                 |
-| `sameSite` | `lax`                                         | Reduces exposure to cross-site request forgery                                            |
-| `maxAge`   | 30 minutes (default) or 30 days (Remember Me) | Controls session lifetime                                                                 |
+| Attribute  | Value                                          | Purpose                                                                                   |
+| ---------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `httpOnly` | `true`                                         | Prevents client-side JavaScript from reading the cookie, blocking XSS-based session theft |
+| `secure`   | Configurable via `COOKIE_SECURE` env           | Restricts transmission to HTTPS connections in production                                 |
+| `sameSite` | `lax`                                          | Reduces exposure to cross-site request forgery                                            |
+| `maxAge`   | 30 minutes (default) or 24 hours (Remember Me) | Controls session lifetime                                                                 |
+
+**Session duration rationale**
+
+The default session duration of 30 minutes was chosen in direct alignment with NIST Special Publication 800-63B (Grassi et al., 2020), which recommends that AAL1 (single-factor) applications require re-authentication after no more than 30 minutes of inactivity. This threshold reflects a balance between security and usability: it is long enough for a student to complete a typical portal session without interruption, yet short enough to limit the window of exposure if a session is abandoned on a shared or unattended device — a realistic scenario in a polytechnic computer laboratory environment.
+
+The extended duration of 24 hours when the Remember Me option is selected was chosen on the basis of two considerations. First, it is meaningfully longer than the default, delivering the practical benefit a student expects when opting in to persistent login — not needing to re-enter credentials on their personal device between study sessions on the same day. Second, it is deliberately bounded: unlike the 30-day durations commonly seen in low-sensitivity consumer applications, 24 hours limits the exposure window if a device is lost or a session token is compromised, while still accommodating a full day of intermittent portal access. This duration represents a pragmatic compromise between the convenience the feature is intended to provide and the principle of least privilege applied to session lifetime.
 
 ### 3.6.4 Application File Structure
 
@@ -556,7 +562,7 @@ The following test cases were executed against the running system. Each test spe
 | TC-07 | Login — Wrong Password            | Submit valid email with incorrect password             | Generic error: "Invalid email or password."                          | Generic alert banner displayed; no field-specific hint                          | Pass      |
 | TC-08 | Login — Unknown Email             | Submit an email not in the database                    | Generic error: "Invalid email or password."                          | Same generic message as TC-07; no timing difference observable                  | Pass      |
 | TC-09 | Remember Me — Unchecked           | Log in without checking Remember Me                    | Session cookie has no explicit `maxAge`; expires on browser close    | Cookie set without `maxAge`; expires on browser close                           | Pass      |
-| TC-10 | Remember Me — Checked             | Log in with Remember Me checked                        | Session cookie `maxAge` set to 30 days                               | Cookie `maxAge` = 2592000000 ms confirmed in browser DevTools                   | Pass      |
+| TC-10 | Remember Me — Checked             | Log in with Remember Me checked                        | Session cookie `maxAge` set to 24 hours                              | Cookie `maxAge` = 86400000 ms confirmed in browser DevTools                     | Pass      |
 | TC-11 | Dashboard — Data Display          | Navigate to dashboard after login                      | All 10 profile fields displayed correctly                            | All fields populated; skeleton loader shown then replaced                       | Pass      |
 | TC-12 | Settings — Pre-population         | Navigate to settings after login                       | All editable fields pre-populated with current data                  | Fields populated including date formatted as YYYY-MM-DD                         | Pass      |
 | TC-13 | Settings — Profile Update         | Change department and submit                           | Profile updated; success alert shown; data reflected immediately     | Alert shown; top-bar name updated; data saved to database                       | Pass      |
