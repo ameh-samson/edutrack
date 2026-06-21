@@ -10,8 +10,17 @@ const {
 
 const router = express.Router();
 
-// looked-up user does not exist, preventing user-enumeration via response time.
+// Generated once at startup — timing-safe dummy for login when email not found
 const DUMMY_HASH = bcrypt.hashSync("timing-safe-dummy-password", 12);
+
+// /auth/me 
+router.get("/me", (req, res) => {
+  if (req.session && req.session.userId) {
+    return res.json({ loggedIn: true });
+  }
+  return res.json({ loggedIn: false });
+});
+
 
 // auth/register
 router.post(

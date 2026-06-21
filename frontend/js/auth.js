@@ -1,4 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
+  /* ── Redirect already-logged-in users away from login/register ── */
+  API.get("/auth/me").then(({ data }) => {
+    if (data && data.loggedIn) window.location.href = "/dashboard.html";
+  });
+
   /** Show a field-level error message. */
   function setFieldError(fieldId, message) {
     const field = document.getElementById(fieldId);

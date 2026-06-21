@@ -21,9 +21,12 @@
   transition: transform 0.25s ease;
 }
 
+/* Desktop collapsed: slide off-screen */
 .sidebar.collapsed {
   transform: translateX(-100%);
 }
+
+/* The toggle is now in the topbar; no in-sidebar button needed */
 
 .sidebar__header {
   height: var(--topbar-height);
@@ -40,34 +43,6 @@
   align-items: center;
   gap: 0.5rem;
   text-decoration: none;
-}
-
-.sidebar__logo-text {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  letter-spacing: -0.01em;
-}
-
-.sidebar__logo-text span {
-  color: var(--color-accent);
-}
-
-.sidebar__collapse-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  padding: 0.35rem;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s;
-}
-
-.sidebar__collapse-btn:hover {
-  background: var(--color-border);
 }
 
 .sidebar__nav {
@@ -105,10 +80,6 @@
 
 .nav-item.active {
   background: var(--color-primary);
-  color: var(--color-text-on-primary);
-}
-
-.nav-item.active .nav-item__icon {
   color: var(--color-text-on-primary);
 }
 
@@ -163,6 +134,7 @@
   gap: 0.75rem;
 }
 
+/* Toggle button — always visible, serves both desktop & mobile */
 .topbar__toggle {
   background: none;
   border: none;
@@ -170,9 +142,42 @@
   color: var(--color-text-secondary);
   padding: 0.35rem;
   border-radius: var(--radius-sm);
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.topbar__toggle:hover {
+  background: var(--color-bg-skeleton);
+  color: var(--color-text-primary);
+}
+
+/* Desktop: show chevron, hide hamburger */
+.topbar__hamburger-icon {
+  display: none;
+}
+.topbar__chevron-toggle {
+  display: block;
+}
+
+/* Chevron transition */
+.topbar__chevron-toggle {
+  transition: transform 0.25s ease;
+}
+
+/* Sidebar open  → chevron points LEFT  (<)  = rotate(180deg) */
+/* Sidebar closed → chevron points RIGHT (>) = rotate(0deg)   */
+/* Default (open on desktop): chevron points left */
+.topbar__chevron-toggle {
+  transform: rotate(180deg);
+}
+
+/* When body has .sidebar-is-collapsed, sidebar is hidden → chevron points right */
+body.sidebar-is-collapsed .topbar__chevron-toggle {
+  transform: rotate(0deg);
 }
 
 .topbar__page-title {
@@ -307,6 +312,7 @@
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
+  /* On mobile sidebar starts hidden and slides in as a drawer */
   .sidebar {
     transform: translateX(-100%);
   }
@@ -315,12 +321,16 @@
     transform: translateX(0);
   }
 
-  .main-area {
-    margin-left: 0;
+  /* On mobile: show hamburger, hide chevron */
+  .topbar__hamburger-icon {
+    display: block;
+  }
+  .topbar__chevron-toggle {
+    display: none;
   }
 
-  .topbar__toggle {
-    display: flex;
+  .main-area {
+    margin-left: 0;
   }
 
   .topbar__user-info {

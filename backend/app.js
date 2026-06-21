@@ -8,6 +8,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/auth.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const settingsRoutes = require("./routes/settings.routes");
+const forgotPasswordRoutes = require("./routes/forgot-password.routes");
 
 // Connect to MongoDB
 connectDB();
@@ -35,6 +36,7 @@ app.use(
 
 // API routes
 app.use("/auth", authRoutes);
+app.use("/auth/forgot-password", forgotPasswordRoutes);
 app.use("/dashboard", dashboardRoutes);
 app.use("/settings", settingsRoutes);
 

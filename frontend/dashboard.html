@@ -27,28 +27,6 @@
           >
             <img src="/assets/logo.svg" alt="" width="120" height="30" />
           </a>
-          <button
-            class="sidebar__collapse-btn"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
-          >
-            <!-- bars icon -->
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
         </div>
 
         <nav class="sidebar__nav" aria-label="Portal navigation">
@@ -139,9 +117,11 @@
         <!-- Top bar -->
         <header class="topbar" role="banner">
           <div class="topbar__left">
-            <!-- Mobile hamburger -->
-            <button class="topbar__toggle" aria-label="Open navigation menu">
+            <!-- Desktop: sidebar collapse toggle / Mobile: open drawer -->
+            <button class="topbar__toggle" aria-label="Toggle navigation">
+              <!-- Hamburger — shown on mobile -->
               <svg
+                class="topbar__hamburger-icon"
                 width="22"
                 height="22"
                 viewBox="0 0 24 24"
@@ -155,6 +135,22 @@
                 <line x1="3" y1="6" x2="21" y2="6" />
                 <line x1="3" y1="12" x2="21" y2="12" />
                 <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+              <!-- Chevron — shown on desktop, rotates with sidebar state -->
+              <svg
+                class="topbar__chevron-toggle"
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
             <span class="topbar__page-title">

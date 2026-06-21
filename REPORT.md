@@ -62,13 +62,15 @@ All routes except `/auth/*` are guarded by the `requireAuth` middleware, which r
 
 The system supports five primary use cases:
 
-| Use Case                         | Actor                 | Precondition   | Outcome                                  |
-| -------------------------------- | --------------------- | -------------- | ---------------------------------------- |
-| Register New Account             | Student               | Not registered | Account created, redirected to login     |
-| Log In                           | Student               | Registered     | Session created, redirected to dashboard |
-| View Dashboard                   | Authenticated Student | Valid session  | Student profile displayed                |
-| Update Profile / Change Password | Authenticated Student | Valid session  | Record updated in database               |
-| Log Out                          | Authenticated Student | Valid session  | Session destroyed, redirected to login   |
+| Use Case                          | Actor                 | Precondition       | Outcome                                        |
+| --------------------------------- | --------------------- | ------------------ | ---------------------------------------------- |
+| Register New Account              | Student               | Not registered     | Account created, redirected to login           |
+| Log In                            | Student               | Registered         | Session created, redirected to dashboard       |
+| Auto-redirect (already logged in) | Authenticated Student | Active session     | Visiting login/register redirects to dashboard |
+| View Dashboard                    | Authenticated Student | Valid session      | Student profile displayed                      |
+| Update Profile / Change Password  | Authenticated Student | Valid session      | Record updated in database                     |
+| Forgot Password                   | Student               | Registered account | Identity verified, new password set            |
+| Log Out                           | Authenticated Student | Valid session      | Session destroyed, redirected to login         |
 
 ---
 
@@ -84,13 +86,13 @@ Output design in an authentication system carries direct security implications. 
 
 ### 3.4.2 Login Page Output
 
-The login page (`index.html`) presents a clean, centred card layout. On validation failure, an inline alert banner displays the generic error message below the form heading. On success, the server responds with a JSON redirect instruction and the JavaScript client navigates to the dashboard. The Remember Me checkbox, when checked, extends the session duration from 30 minutes to 24 hours by setting `req.session.cookie.maxAge` on the server, with no change to the visible interface.
+The login page (`index.html`) presents a clean, centred card layout. On validation failure, an inline alert banner displays the generic error message below the form heading. On success, the server responds with a JSON redirect instruction and the JavaScript client navigates to the dashboard. The Remember Me checkbox, when checked, extends the session duration from 30 minutes to 24 hours by setting `req.session.cookie.maxAge` on the server, with no change to the visible interface. A **Forgot Password** link below the form navigates to the two-step password reset page.
 
 ### 3.4.3 Dashboard Output — Protected Page
 
 The dashboard (`dashboard.html`) is the primary protected resource of the system. It is accessible only to users who hold a valid authenticated session. The page renders in a two-panel app shell: a fixed left sidebar carrying the EduTrack logo and navigation links (Dashboard, Settings, Sign Out), and a main content area subdivided into a top bar and a scrollable page body.
 
-The top bar displays a context-sensitive page title, a notification bell, and a user widget showing the authenticated student's initials as a coloured avatar, their full name, and their email address. This information is populated dynamically from the `/dashboard` API endpoint on page load; a skeleton loader is displayed during the fetch to prevent a blank flash of content.
+The top bar contains a toggle button on the left that serves two purposes: on desktop it collapses or expands the sidebar (a `>` chevron rotates to `<` to reflect the current state, with the state persisted to `localStorage`); on mobile it opens the sidebar as a full-height drawer with a dark overlay. This single button replaces the earlier in-sidebar collapse control, ensuring the toggle is always reachable even when the sidebar is hidden. This information is populated dynamically from the `/dashboard` API endpoint on page load; a skeleton loader is displayed during the fetch to prevent a blank flash of content.
 
 The main content area contains a student profile card displaying ten data fields: Full Name, Email Address, Phone Number, Matric/Student ID, Department, Level (ND 1, ND 2, HND 1, or HND 2), Date of Birth, Gender, Last Login, and Member Since. The card header also shows the student's level as a coloured badge and includes a prominent "Edit Profile" button that navigates to the Settings page.
 
@@ -228,9 +230,10 @@ edutrack/
 │   ├── config/db.js             # MongoDB connection via Mongoose
 │   ├── models/User.js           # Mongoose User schema and model
 │   ├── routes/
-│   │   ├── auth.routes.js       # POST /auth/login, /auth/register, /auth/logout
+│   │   ├── auth.routes.js       # GET /auth/me; POST /auth/login, /register, /logout
 │   │   ├── dashboard.routes.js  # GET  /dashboard (protected)
-│   │   └── settings.routes.js   # GET|PATCH /settings/profile; POST /settings/password
+│   │   ├── settings.routes.js   # GET|PATCH /settings/profile; POST /settings/password
+│   │   └── forgot-password.routes.js  # POST /auth/forgot-password/verify, /reset
 │   └── middleware/
 │       ├── auth.middleware.js   # requireAuth session guard
 │       ├── rateLimiter.js       # loginLimiter and registerLimiter configurations
@@ -240,6 +243,7 @@ edutrack/
 │   ├── register.html            # Registration page
 │   ├── dashboard.html           # Protected student profile dashboard
 │   ├── settings.html            # Protected profile update and password change page
+│   ├── forgot-password.html     # Two-step password reset page
 │   ├── css/
 │   │   ├── variables.css        # CSS custom properties (design tokens)
 │   │   ├── base.css             # Reset, typography, auth page layout
@@ -247,10 +251,11 @@ edutrack/
 │   │   └── components.css       # Buttons, cards, forms, alerts, dropdowns
 │   ├── js/
 │   │   ├── api.js               # Fetch wrapper (GET / POST / PATCH + automatic 401 redirect)
-│   │   ├── auth.js              # Login and register form logic with client-side validation
+│   │   ├── auth.js              # Login and register logic; redirects logged-in users to dashboard
 │   │   ├── dashboard.js         # Fetches and renders the authenticated student's profile
 │   │   ├── settings.js          # Profile update and password change logic
-│   │   └── sidebar.js           # Sidebar collapse, mobile drawer, user dropdown, logout
+│   │   ├── sidebar.js           # Topbar toggle: desktop collapse + mobile drawer + logout
+│   │   └── forgot-password.js   # Two-step password reset flow (verify identity → set password)
 │   └── assets/logo.svg
 └── .gitignore
 ```
