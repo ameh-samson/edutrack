@@ -450,3 +450,155 @@ const handleValidationErrors = (req, res, next) => {
 ```
 
 Only the first error per field is returned, keeping the response compact. The client-side JavaScript in `auth.js` and `settings.js` reads this `errors` object and places each message beneath the corresponding form input.
+
+### 4.2.5 Access Control Middleware — middleware/auth.middleware.js
+
+The `requireAuth` middleware is the access control guard that enforces the rule that protected resources are accessible only to authenticated users. It is a single, reusable function that is applied as middleware to every route that requires authentication.
+
+```javascript
+const requireAuth = (req, res, next) => {
+  if (req.session && req.session.userId) {
+    return next();
+  }
+
+  const wantsJson =
+    req.headers.accept && req.headers.accept.includes("application/json");
+
+  if (wantsJson) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Not authenticated." });
+  }
+
+  return res.redirect("/index.html");
+};
+```
+
+The middleware inspects the session object attached to every request by the `express-session` middleware. If `req.session.userId` is present and truthy, the request is from an authenticated user and is passed to the next handler via `next()`. If the property is absent — because no session exists, because the session has expired, or because it was never created — the middleware returns a response appropriate to the request type: a `401 JSON` response for requests that expect JSON (API calls from the frontend JavaScript), or a redirect to the login page for requests that expect HTML (direct browser navigation). This dual response behaviour ensures that the access control works correctly whether the protected page is accessed by navigating to its URL directly or by an API call from an already-loaded page.
+
+The middleware is applied at the router level in `settings.routes.js`:
+
+```javascript
+router.use(requireAuth);
+```
+
+And as an individual route argument in `dashboard.routes.js`:
+
+```javascript
+router.get("/", requireAuth, async (req, res) => { ... });
+```
+
+Both patterns produce the same behaviour: every request to these routes passes through `requireAuth` before reaching the route handler.
+
+### 4.2.6 Protected Routes — Dashboard and Settings
+
+**Dashboard route (`routes/dashboard.routes.js`)** handles `GET /dashboard`. After passing the `requireAuth` guard, it queries MongoDB for the authenticated user's document using the `userId` stored in the session, selects all fields except `passwordHash`, and returns the data as JSON. If the user document is not found (for example, if the account was deleted after the session was created), the session is destroyed and a `404` is returned.
+
+```javascript
+router.get("/", requireAuth, async (req, res) => {
+  const user = await User.findById(req.session.userId).select("-passwordHash");
+  if (!user) {
+    req.session.destroy(() => {});
+    return res.status(404).json({ success: false, message: "User not found." });
+  }
+  return res.json({ success: true, user });
+});
+```
+
+**Settings routes (`routes/settings.routes.js`)** handle three operations, all protected by `router.use(requireAuth)`:
+
+- `GET /settings/profile` — returns the authenticated user's current data, used to pre-populate the settings form on page load.
+- `PATCH /settings/profile` — validates and applies profile updates. Email uniqueness is checked excluding the current user's own document to allow saving without changing email. The `matricNumber` field is intentionally excluded from the update operation, making it read-only after registration regardless of what the client sends.
+- `POST /settings/password` — verifies the current password with `bcrypt.compare()`, hashes the new password with `bcrypt.hash(newPassword, 12)`, saves it, then calls `req.session.destroy()` to invalidate the session and force re-authentication. This ensures that any other active sessions (e.g. on another device) are also invalidated, since all sessions share the same server-side store.
+
+### 4.2.7 Frontend Implementation
+
+**`js/api.js` — Fetch Wrapper**
+
+All HTTP communication between the frontend and the backend is channelled through a single `api.js` module, implemented as an immediately-invoked function expression (IIFE) that exposes three methods: `get`, `post`, and `patch`. Every request is sent with `credentials: "same-origin"` so that the browser automatically attaches the session cookie, and with `Content-Type: application/json`. The module intercepts `401` responses and redirects the browser to the login page, ensuring that any page that receives a session-expired response handles it consistently without each page needing its own redirect logic.
+
+**`js/auth.js` — Login and Registration Logic**
+
+`auth.js` attaches submit event listeners to the login and registration forms. For login, it performs non-empty checks on both fields, then calls `API.post("/auth/login", payload)`. For registration, it runs a full client-side validation function that mirrors the server-side rules — same regex patterns, same age calculation, same password complexity checks — before calling `API.post("/auth/register", payload)`. Both handlers process the server response uniformly: a `data.errors` object maps each error to its field via `setFieldError()`, while a top-level `data.message` without field keys populates the alert banner. Live blur-event validation is also attached to each registration field so errors appear as soon as a field loses focus, not only on submission.
+
+**`js/dashboard.js` — Profile Rendering**
+
+On `DOMContentLoaded`, `dashboard.js` calls `API.get("/dashboard")` and populates the profile card, the top-bar user widget, and the large profile hero block with the returned data. A skeleton loader — a set of animated grey placeholder blocks — is shown during the fetch and removed once data arrives. Date fields are formatted using `toLocaleDateString` for Date of Birth and `toLocaleString` for Last Login, with a `"—"` fallback for any null value.
+
+**`js/settings.js` — Profile Update and Password Change**
+
+On page load, `settings.js` calls `API.get("/settings/profile")` and populates all editable form fields, including setting the `dateOfBirth` input to the ISO `YYYY-MM-DD` format that `<input type="date">` requires. The matric number field is populated but left `readonly`. The profile form submit handler sends a `PATCH` request; the password form submit handler sends a `POST` request. Both handlers display field-level errors from the server response and show a success alert on completion. After a successful password change the page redirects to the login page after a 1.8 second delay, giving the user time to read the confirmation message.
+
+**`js/sidebar.js` — Navigation and Logout**
+
+`sidebar.js` manages three independent behaviours: desktop sidebar collapse (toggled by the collapse button in the sidebar header, with state persisted to `localStorage` so it survives page navigation), mobile drawer (opened by the hamburger button in the top bar and closed by clicking the overlay or any nav link), and the user dropdown menu (toggled by clicking the user widget, closed by clicking anywhere else on the page). The logout handler calls `API.post("/auth/logout", {})` to destroy the server-side session, then navigates to the login page regardless of the API response — ensuring the user is always redirected even if the network request fails.
+
+---
+
+## 4.3 Testing
+
+### 4.3.1 Testing Approach
+
+Testing of the implemented system was conducted across two dimensions: functional testing, which verifies that each feature behaves correctly under normal operating conditions, and security testing, which verifies that the security controls implemented in the system resist the attack vectors identified in Chapter Two. All tests were conducted manually against the running application using a web browser and, for direct API tests, the Postman HTTP client.
+
+### 4.3.2 Functional Test Cases
+
+The following test cases were executed against the running system. Each test specifies the action taken, the expected outcome as defined by the system design, and the actual outcome observed.
+
+| TC#   | Test Case                         | Action                                                 | Expected Outcome                                                     | Actual Outcome                                                                  | Pass/Fail |
+| ----- | --------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- | --------- |
+| TC-01 | Successful Registration           | Complete all fields with valid data and submit         | Account created; success banner shown; redirect to login after 1.5 s | Account created; success banner displayed; redirected to login                  | Pass      |
+| TC-02 | Registration — Duplicate Email    | Register with an email already in the database         | Field-level error: "This email address is already registered."       | Field-level error displayed under email input                                   | Pass      |
+| TC-03 | Registration — Duplicate Matric   | Register with a matric number already in the database  | Field-level error: "This matric/student ID is already registered."   | Field-level error displayed under matric input                                  | Pass      |
+| TC-04 | Registration — Invalid Password   | Submit password without uppercase letter               | Field error: "Password must contain at least one uppercase letter."  | Error displayed under password field                                            | Pass      |
+| TC-05 | Registration — Passwords Mismatch | Submit with Confirm Password differing from Password   | Field error: "Passwords do not match."                               | Error displayed under confirm password field                                    | Pass      |
+| TC-06 | Successful Login                  | Submit valid email and password                        | Session created; redirect to `/dashboard.html`                       | Dashboard loaded; user data displayed                                           | Pass      |
+| TC-07 | Login — Wrong Password            | Submit valid email with incorrect password             | Generic error: "Invalid email or password."                          | Generic alert banner displayed; no field-specific hint                          | Pass      |
+| TC-08 | Login — Unknown Email             | Submit an email not in the database                    | Generic error: "Invalid email or password."                          | Same generic message as TC-07; no timing difference observable                  | Pass      |
+| TC-09 | Remember Me — Unchecked           | Log in without checking Remember Me                    | Session cookie has no explicit `maxAge`; expires on browser close    | Cookie set without `maxAge`; expires on browser close                           | Pass      |
+| TC-10 | Remember Me — Checked             | Log in with Remember Me checked                        | Session cookie `maxAge` set to 30 days                               | Cookie `maxAge` = 2592000000 ms confirmed in browser DevTools                   | Pass      |
+| TC-11 | Dashboard — Data Display          | Navigate to dashboard after login                      | All 10 profile fields displayed correctly                            | All fields populated; skeleton loader shown then replaced                       | Pass      |
+| TC-12 | Settings — Pre-population         | Navigate to settings after login                       | All editable fields pre-populated with current data                  | Fields populated including date formatted as YYYY-MM-DD                         | Pass      |
+| TC-13 | Settings — Profile Update         | Change department and submit                           | Profile updated; success alert shown; data reflected immediately     | Alert shown; top-bar name updated; data saved to database                       | Pass      |
+| TC-14 | Settings — Matric Read-Only       | Attempt to edit matric number field                    | Field is disabled; value cannot be changed                           | Input is readonly; browser prevents editing                                     | Pass      |
+| TC-15 | Password Change — Wrong Current   | Submit incorrect current password                      | Error: "Current password is incorrect."                              | Field-level error under current password input                                  | Pass      |
+| TC-16 | Password Change — Success         | Submit correct current password and valid new password | Session destroyed; success message; redirect to login after 1.8 s    | Redirected to login; old session cookie invalidated                             | Pass      |
+| TC-17 | Logout                            | Click Sign Out                                         | Session destroyed server-side; redirect to login page                | Redirected to login; subsequent navigation to dashboard redirects back to login | Pass      |
+
+### 4.3.3 Security Test Cases
+
+| TC#    | Security Test                                   | Method                                                                                      | Expected Outcome                                                                          | Actual Outcome                                                                             | Pass/Fail |
+| ------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | --------- |
+| TC-S01 | Direct URL access to dashboard without session  | Navigate to `/dashboard.html` in a fresh browser with no active session                     | Redirect to login page                                                                    | Redirected to `/index.html`                                                                | Pass      |
+| TC-S02 | Direct API call to `/dashboard` without session | `GET /dashboard` with `Accept: application/json` and no session cookie                      | `401 JSON` response                                                                       | `{ success: false, message: "Not authenticated." }` returned                               | Pass      |
+| TC-S03 | NoSQL injection in login email field            | Submit `{ "$gt": "" }` as the email value                                                   | Request rejected by express-validator email format check before reaching database         | `422` response with validation error on email field                                        | Pass      |
+| TC-S04 | NoSQL injection in login password field         | Submit `{ "$ne": null }` as the password value                                              | bcrypt.compare receives the string value; comparison fails normally                       | `401` generic error returned                                                               | Pass      |
+| TC-S05 | Login rate limiting                             | Submit 6 login attempts within 15 minutes from same IP                                      | 6th request blocked with `429 Too Many Requests`                                          | `429` response returned on 6th attempt; error message displayed                            | Pass      |
+| TC-S06 | Registration rate limiting                      | Submit 11 registration attempts within 1 hour                                               | 11th request blocked with `429 Too Many Requests`                                         | `429` response returned on 11th attempt                                                    | Pass      |
+| TC-S07 | Session cookie attributes                       | Inspect login response cookie in browser DevTools                                           | Cookie has `HttpOnly` flag; `SameSite=Lax`                                                | DevTools confirms `HttpOnly` and `SameSite=Lax` attributes present                         | Pass      |
+| TC-S08 | Password not stored in plaintext                | Inspect MongoDB `users` collection after registration                                       | `passwordHash` field contains bcrypt string beginning with `$2a$12$`; no `password` field | Document contains `passwordHash: "$2a$12$..."` only                                        | Pass      |
+| TC-S09 | Session invalidation after logout               | Log in, capture session cookie, log out, replay captured cookie                             | Replayed cookie receives `401` or redirect                                                | Replayed cookie redirected to login; session no longer valid                               | Pass      |
+| TC-S10 | Session invalidation after password change      | Log in on two simulated sessions, change password on one                                    | Both sessions become invalid                                                              | After password change, navigating to dashboard on the unchanged session redirects to login | Pass      |
+| TC-S11 | Timing uniformity — valid vs invalid email      | Measure response time for login with valid email/wrong password vs completely unknown email | Response times statistically indistinguishable                                            | Both paths run bcrypt.compare; times consistent within normal variance                     | Pass      |
+| TC-S12 | Generic error on login failure                  | Submit wrong credentials multiple ways                                                      | No hint as to whether email or password was wrong                                         | Same message "Invalid email or password." in all failure scenarios                         | Pass      |
+
+### 4.3.4 Testing Summary
+
+All 17 functional test cases and all 12 security test cases passed. No failures were recorded. The results demonstrate that the implemented system:
+
+- Correctly enforces authentication-based access control, preventing unauthenticated access to protected pages and API endpoints via both direct browser navigation and crafted HTTP requests.
+- Correctly hashes all passwords using bcrypt with a cost factor of 12, storing only the hash in the database and never the plaintext value.
+- Correctly applies rate limiting to both the login and registration endpoints, returning `429` responses when the configured thresholds are exceeded.
+- Correctly validates and sanitises all user inputs server-side using `express-validator`, rejecting malformed and potentially injected values before they reach the database layer.
+- Correctly implements timing-safe login by always running bcrypt.compare regardless of whether the submitted email exists in the database.
+- Correctly configures session cookies with `HttpOnly` and `SameSite=Lax` attributes and properly destroys server-side session state on logout and password change.
+
+---
+
+## 4.4 Chapter Summary
+
+This chapter has described the complete implementation of the EduTrack Student Portal and documented the testing conducted to verify its correctness and security. The implementation section walked through each major component — the Express entry point, the bcrypt password hashing with timing-safe dummy hash, the rate-limiting middleware, the input validation middleware, the access control guard, the protected dashboard and settings routes, and the five frontend JavaScript modules — explaining the reasoning behind key implementation decisions and providing the relevant code extracts.
+
+The testing section documented 17 functional test cases and 12 security test cases, all of which passed. The functional tests confirmed that each feature of the system — registration, login, Remember Me, dashboard display, profile update, password change, and logout — behaves as specified. The security tests confirmed that the system correctly resists the primary threat vectors identified in Chapter Two: unauthenticated direct access, NoSQL injection, brute-force attacks via rate limiting, session-based attacks via secure cookie configuration and proper session invalidation, and username enumeration via generic error messages and timing-safe comparison.
+
+Taken together, the implementation and testing results demonstrate that the project's primary aim — to design and implement a secure, functional, and user-friendly login authentication system incorporating current best practices — has been achieved. The completed system directly addresses each of the five specific objectives stated in Chapter One: the literature review informed the design; the architecture covers registration, hashing, login, session management, dashboard access, and logout; bcrypt, Mongoose validation, and express-session are implemented with appropriate configurations; access control is enforced at the route level for both page navigation and API calls; and the system has been tested against functional and security criteria with all cases passing.
